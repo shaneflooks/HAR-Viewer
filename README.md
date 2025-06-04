@@ -1,8 +1,6 @@
 # HAR-Viewer
 Upload and analyze HAR files, with a focus on WebRTC &amp; API troubleshooting.
 
-# HAR-Viewer: Comprehensive HAR File Analysis for WebRTC and API Troubleshooting  
-
 The HAR-Viewer is an open-source tool designed to simplify the analysis of HTTP Archive (HAR) files, with specialized features for diagnosing WebRTC connectivity issues and API call anomalies. By automating the detection of common pitfalls such as authentication failures, high-latency API requests, and WebRTC configuration errors, this tool streamlines troubleshooting for developers and network engineers. Built with a focus on usability and extensibility, the HAR-Viewer parses HAR files to surface critical insights through an intuitive interface, reducing manual inspection time while improving diagnostic accuracy.  
 
 ## Project Overview  
@@ -192,4 +190,37 @@ entries.forEach((entry, i) => {
 - 80% test coverage minimum  
 
 ## License  
-Apache 2.0 - See [LICENSE](LICENSE) for details. Contributions welcome under the Developer Certificate of Origin (DCO).
+Apache 2.0 - See [LICENSE](LICENSE) for details. Contributions welcome under the Developer Certificate of Origin (DCO).  
+
+This comprehensive README follows best practices for open-source projects[1][2][7], providing technical depth while maintaining accessibility for new users. The structured approach enables both quick-start usage and deep customization for advanced scenarios.
+
+[1] https://github.com/jehna/readme-best-practices
+[2] https://www.archbee.com/blog/readme-document-elements
+[3] https://toolbox.googleapps.com/apps/har_analyzer/
+[4] https://www.keycdn.com/support/har-viewer
+[5] https://help.videoexpertsgroup.com/kb/webrtc-troubleshooting
+[6] https://docs.github.com/articles/about-readmes
+[7] https://coding-boot-camp.github.io/full-stack/github/professional-readme-guide/
+[8] https://github.com/sangupta/har
+[9] https://webvizio.com/help-center/view-and-analyze-har/
+[10] https://www.red5.net/docs/red5-pro/users-guide/troubleshooting-and-best-practices/webrtc/
+[11] https://www.hatica.io/blog/best-practices-for-github-readme/
+[12] https://www.reddit.com/r/learnprogramming/comments/vxfku6/how_to_write_a_readme/
+[13] https://github.com/janodvarko/harviewer
+[14] https://blog.addpipe.com/troubleshooting-webrtc-connection-issues/
+[15] https://tilburgsciencehub.com/topics/collaborate-share/share-your-work/content-creation/readme-best-practices/
+[16] http://www.softwareishard.com/blog/har-viewer/
+[17] https://webrtc.ventures/2025/04/webrtc-video-debugging-using-video_replay/
+[18] https://www.youtube.com/watch?v=E6NO0rgFub4
+[19] https://jam.dev/utilities/har-file-viewer
+[20] https://www.npmjs.com/package/network-viewer
+[21] https://github.com/othneildrew/Best-README-Template
+[22] https://github.com/jehna/readme-best-practices/blob/master/README-default.md
+[23] http://www.softwareishard.com/har/viewer/
+[24] https://www.perfecto.io/blog/how-use-har-file-find-hidden-performance-bottlenecks-your-app
+[25] https://github.com/webrtc/testrtc/blob/master/README.md
+[26] https://github.com/pubnub/webrtc/blob/master/readme.md
+[27] https://www.ir.com/blog/guide-to-webrtc-troubleshooting
+[28] https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API
+[29] https://getstream.io/blog/debugging-webrtc-calls/
+[30] https://www.youtube.com/watch?v=ziU_VxaDmDk
