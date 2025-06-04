@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HAR Viewer for WebRTC & API Troubleshooting</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none; /* Prevents pull-to-refresh on mobile */
+        }
+        .tab-button.active {
+            border-bottom-color: #3b82f6; /* blue-500 */
+            color: #3b82f6;
+        }
+        .sticky-header th {
+            position: sticky;
+            top: 0;
+            background-color: white;
+            z-index: 10;
+        }
+        /* Custom scrollbar for webkit browsers */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .details-section {
+            max-height: 60vh; 
+            overflow-y: auto;
+        }
+        .analysis-section {
+             max-height: 400px;
+             overflow-y: auto;
+        }
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .issue-critical { color: #e53e3e; /* red-600 */ }
+        .issue-warning { color: #dd6b20; /* orange-600 */ }
+        .issue-info { color: #3182ce; /* blue-600 */ }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <div class="container mx-auto p-4 max-w-7xl">
+        <header class="mb-6 text-center">
+            <h1 class="text-3xl font-bold text-blue-600">HAR Viewer</h1>
+            <p class="text-gray-600">Upload and analyze HAR files, with a focus on WebRTC & API troubleshooting.</p>
+        </header>
+
+        <!-- File Upload Section -->
+        <div class="mb-6 bg-white p-6 rounded-lg shadow-md">
+            <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <label for="harFile" class="block text-sm font-medium text-gray-700 mb-2">Upload HAR File (.har)</label>
+                    <input type="file" id="harFile" accept=".har" class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-md file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100
+                        cursor-pointer
+                    "/>
+                </div>
+                <button id="resetButton" class="mt-4 sm:mt-0 bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md text-sm">
+                    Reset View
+                </button>
+            </div>
+            <div id="loadingIndicator" class="hidden loader"></div>
+            <p id="fileInfo" class="mt-2 text-sm text-gray-500"></p>
+        </div>
+
+        <!-- Search/Filter Section -->
+        <div class="mb-6 bg-white p-4 rounded-lg shadow-md">
+            <label for="filterInput" class="block text-sm font-medium text-gray-700 mb-1">Filter Requests (by URL, content type, or body content):</label>
+            <input type="text" id="filterInput" placeholder="e.g., /api/, application/json, 401" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+        </div>
+        
+        <!-- Summary Stats -->
+        <div id="summaryStats" class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+
+        <!-- API Call Analysis Section -->
+        <div id="apiAnalysisSection" class="mb-6 bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-3 text-green-700">API Call Analysis</h2>
+            <div id="apiAnalysisContent" class="analysis-section space-y-4">
+                <p class="text-gray-500">Upload a HAR file to see API call specific analysis.</p>
+            </div>
+        </div>
+
+        <!-- WebRTC Analysis Section -->
+        <div id="webrtcAnalysisSection" class="mb-6 bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-3 text-purple-700">WebRTC Analysis & Diagnostics</h2>
+            <div id="webrtcAnalysisContent" class="analysis-section space-y-4">
+                <p class="text-gray-500">Upload a HAR file to see WebRTC specific analysis.</p>
+            </div>
+        </div>
+
+        <!-- Potentially WebRTC-Related Entries (Quick Filter) -->
+        <div id="webrtcQuickFilterSection" class="mb-6">
+            <h2 class="text-xl font-semibold mb-2 text-blue-700">Quick Filter: Potentially WebRTC-Related Entries</h2>
+            <div id="webrtcEntries" class="bg-white p-4 rounded-lg shadow-md max-h-96 overflow-y-auto">
+                <p class="text-gray-500">No WebRTC related entries identified by keywords yet, or HAR file not loaded.</p>
+            </div>
+        </div>
+
+        <!-- Main HAR Entries Table -->
+        <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+            <h2 class="text-xl font-semibold mb-3 text-gray-700">All Network Entries</h2>
+            <div class="overflow-x-auto max-h-[500px] overflow-y-auto">
+                <table id="harTable" class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50 sticky-header">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time (ms)</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size (KB)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="harTableBody" class="bg-white divide-y divide-gray-200">
+                         <tr><td colspan="7" class="text-center py-4 text-gray-500">Please upload a HAR file to see entries.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Selected Entry Details -->
+        <div id="entryDetails" class="hidden bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-2xl font-semibold mb-4 text-blue-600">Request Details</h2>
+            <button id="closeDetails" class="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            
+            <div class="border-b border-gray-200 mb-4">
+                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button data-tab="summary" class="tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Summary</button>
+                    <button data-tab="requestHeaders" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Request Headers</button>
+                    <button data-tab="responseHeaders" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Response Headers</button>
+                    <button data-tab="requestBody" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Request Body</button>
+                    <button data-tab="responseBody" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Response Body</button>
+                    <button data-tab="timings" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Timings</button>
+                </nav>
+            </div>
+            <div id="detailsContent" class="details-section"></div>
+        </div>
+    </div>
+
+    <script>
+        let harData = null;
+        let allEntries = []; 
+
+        const harFileInput = document.getElementById('harFile');
+        const fileInfo = document.getElementById('fileInfo');
+        const harTableBody = document.getElementById('harTableBody');
+        const entryDetailsDiv = document.getElementById('entryDetails');
+        const detailsContent = document.getElementById('detailsContent');
+        const closeDetailsButton = document.getElementById('closeDetails');
+        const summaryStatsDiv = document.getElementById('summaryStats');
+        const filterInput = document.getElementById('filterInput');
+        const webrtcEntriesDiv = document.getElementById('webrtcEntries'); 
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const resetButton = document.getElementById('resetButton');
+        const webrtcAnalysisContentDiv = document.getElementById('webrtcAnalysisContent');
+        const apiAnalysisContentDiv = document.getElementById('apiAnalysisContent'); // New API analysis section
+
+        const HIGH_LATENCY_THRESHOLD_MS = 500; 
+        const API_HIGH_LATENCY_THRESHOLD_MS = 1000; // Threshold for general API calls
+
+        harFileInput.addEventListener('change', handleFileSelect);
+        filterInput.addEventListener('input', handleFilter);
+        resetButton.addEventListener('click', resetView);
+        
+        if (closeDetailsButton) {
+            closeDetailsButton.addEventListener('click', () => {
+                entryDetailsDiv.classList.add('hidden');
+                entryDetailsDiv.style.position = ''; entryDetailsDiv.style.top = ''; entryDetailsDiv.style.left = '';
+                entryDetailsDiv.style.transform = ''; entryDetailsDiv.style.zIndex = ''; entryDetailsDiv.style.width = '';
+                entryDetailsDiv.style.maxWidth = '';
+            });
+        }
+
+        function resetView() {
+            harData = null;
+            allEntries = [];
+            harFileInput.value = ''; 
+            fileInfo.textContent = 'No file selected.';
+            filterInput.value = ''; 
+            summaryStatsDiv.innerHTML = '';
+            webrtcEntriesDiv.innerHTML = '<p class="text-gray-500">No WebRTC related entries identified by keywords yet, or HAR file not loaded.</p>';
+            webrtcAnalysisContentDiv.innerHTML = '<p class="text-gray-500">Upload a HAR file to see WebRTC specific analysis.</p>'; 
+            apiAnalysisContentDiv.innerHTML = '<p class="text-gray-500">Upload a HAR file to see API call specific analysis.</p>'; // Reset API analysis
+            harTableBody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-gray-500">Please upload a HAR file to see entries.</td></tr>';
+            entryDetailsDiv.classList.add('hidden');
+            entryDetailsDiv.style.position = ''; entryDetailsDiv.style.top = ''; entryDetailsDiv.style.left = '';
+            entryDetailsDiv.style.transform = ''; entryDetailsDiv.style.zIndex = ''; entryDetailsDiv.style.width = '';
+            entryDetailsDiv.style.maxWidth = '';
+            loadingIndicator.classList.add('hidden');
+            console.log("View has been reset.");
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                fileInfo.textContent = `Selected file: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
+                loadingIndicator.classList.remove('hidden');
+                entryDetailsDiv.classList.add('hidden'); 
+                harTableBody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-gray-500">Loading entries...</td></tr>';
+                webrtcEntriesDiv.innerHTML = '<p class="text-gray-500">Processing WebRTC entries...</p>';
+                webrtcAnalysisContentDiv.innerHTML = '<p class="text-gray-500">Analyzing for WebRTC patterns...</p>';
+                apiAnalysisContentDiv.innerHTML = '<p class="text-gray-500">Analyzing for API call patterns...</p>';
+                summaryStatsDiv.innerHTML = '';
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        harData = JSON.parse(e.target.result);
+                        if (harData && harData.log && harData.log.entries) {
+                            allEntries = harData.log.entries; 
+                            displayHarSummary(harData.log);
+                            displayHarEntries(allEntries);
+                            identifyWebRTCEntriesByKeywords(allEntries); 
+                            performWebRTCAnalysis(allEntries); 
+                            performAPICallAnalysis(allEntries); // New: Perform API analysis
+                        } else {
+                            throw new Error("HAR file is missing log or entries data.");
+                        }
+                    } catch (error) {
+                        console.error("Error parsing HAR file:", error);
+                        fileInfo.textContent = `Error: Invalid HAR file format or content. ${error.message}`;
+                        harTableBody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-red-500">Failed to parse HAR file.</td></tr>';
+                        webrtcEntriesDiv.innerHTML = '<p class="text-red-500">Error processing file for keyword filter.</p>';
+                        webrtcAnalysisContentDiv.innerHTML = '<p class="text-red-500">Error performing WebRTC analysis.</p>';
+                        apiAnalysisContentDiv.innerHTML = '<p class="text-red-500">Error performing API call analysis.</p>';
+                        harData = null; allEntries = []; summaryStatsDiv.innerHTML = '';
+                    } finally {
+                        loadingIndicator.classList.add('hidden');
+                    }
+                };
+                reader.onerror = function() {
+                    fileInfo.textContent = "Error reading file.";
+                    loadingIndicator.classList.add('hidden');
+                    harTableBody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-red-500">Error reading file.</td></tr>';
+                    harData = null; allEntries = []; summaryStatsDiv.innerHTML = '';
+                    webrtcEntriesDiv.innerHTML = '<p class="text-red-500">Error reading file.</p>';
+                    webrtcAnalysisContentDiv.innerHTML = '<p class="text-red-500">Error reading file for WebRTC analysis.</p>';
+                    apiAnalysisContentDiv.innerHTML = '<p class="text-red-500">Error reading file for API analysis.</p>';
+                };
+                reader.readAsText(file);
+            } else {
+                if (!harFileInput.files || harFileInput.files.length === 0) {
+                    if (fileInfo.textContent !== "No file selected.") { resetView(); }
+                }
+            }
+        }
+
+        function displayHarSummary(log) {
+            const page = log.pages && log.pages[0] ? log.pages[0] : null;
+            const totalRequests = log.entries.length;
+            let totalSize = 0;
+            log.entries.forEach(entry => { /* ... size calculation ... */ 
+                totalSize += (entry.response.bodySize > 0 ? entry.response.bodySize : 0) + 
+                             (entry.response.headersSize > 0 ? entry.response.headersSize : 0) +
+                             (entry.request.bodySize > 0 ? entry.request.bodySize : 0) +
+                             (entry.request.headersSize > 0 ? entry.request.headersSize : 0);
+            });
+            let pageLoadTime = 'N/A';
+            if (page && page.pageTimings && page.pageTimings.onLoad && page.pageTimings.onLoad > 0) {
+                 pageLoadTime = `${page.pageTimings.onLoad.toFixed(2)} ms`;
+            } else if (log.entries.length > 0) {
+                const firstEntryStart = new Date(log.entries[0].startedDateTime).getTime();
+                const lastEntry = log.entries[log.entries.length - 1];
+                const lastEntryEnd = new Date(lastEntry.startedDateTime).getTime() + lastEntry.time;
+                if (!isNaN(firstEntryStart) && !isNaN(lastEntryEnd) && lastEntryEnd >= firstEntryStart) {
+                    pageLoadTime = `${(lastEntryEnd - firstEntryStart).toFixed(2)} ms (calculated)`;
+                } else { pageLoadTime = 'N/A (invalid dates)'; }
+            }
+            summaryStatsDiv.innerHTML = `
+                <div class="bg-blue-50 p-3 rounded-lg shadow"><p class="text-sm text-blue-500 font-medium">Total Requests</p><p class="text-xl font-semibold text-blue-700">${totalRequests}</p></div>
+                <div class="bg-green-50 p-3 rounded-lg shadow"><p class="text-sm text-green-500 font-medium">Total Transferred</p><p class="text-xl font-semibold text-green-700">${(totalSize / (1024*1024)).toFixed(2)} MB / ${(totalSize / 1024).toFixed(2)} KB</p></div>
+                <div class="bg-yellow-50 p-3 rounded-lg shadow"><p class="text-sm text-yellow-500 font-medium">Page Load Time</p><p class="text-xl font-semibold text-yellow-700">${pageLoadTime}</p></div>
+                <div class="bg-indigo-50 p-3 rounded-lg shadow"><p class="text-sm text-indigo-500 font-medium">HAR Version</p><p class="text-xl font-semibold text-indigo-700">${log.version || 'N/A'}</p></div>`;
+        }
+
+        function displayHarEntries(entriesToDisplay) {
+            harTableBody.innerHTML = ''; 
+            if (!entriesToDisplay || entriesToDisplay.length === 0) {
+                harTableBody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-gray-500">${filterInput.value ? 'No entries match your filter.' : 'No entries found or HAR file not loaded.'}</td></tr>`;
+                return;
+            }
+            entriesToDisplay.forEach((entry) => { /* ... table row creation ... */ 
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50 cursor-pointer';
+                const originalIndex = allEntries.indexOf(entry);
+                tr.onclick = () => displayEntryDetails(entry, originalIndex);
+                const shortUrl = entry.request.url.length > 80 ? entry.request.url.substring(0, 77) + '...' : entry.request.url;
+                const status = entry.response.status;
+                let statusColor = 'text-green-500';
+                if (status === 0 || status === -1) statusColor = 'text-gray-500';
+                else if (status >= 400) statusColor = 'text-red-500';
+                else if (status >= 300) statusColor = 'text-yellow-500';
+                const totalEntrySize = (entry.response.bodySize > 0 ? entry.response.bodySize : 0) + (entry.response.headersSize > 0 ? entry.response.headersSize : 0);
+                tr.innerHTML = `
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${originalIndex + 1}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${entry.request.method}</td>
+                    <td class="px-4 py-2 text-sm text-gray-500 break-all" title="${escapeHtml(entry.request.url)}">${escapeHtml(shortUrl)}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm ${statusColor} font-semibold">${status} ${escapeHtml(entry.response.statusText)}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${escapeHtml(entry.response.content.mimeType || 'N/A')}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${entry.time != null ? entry.time.toFixed(2) : 'N/A'}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${(totalEntrySize / 1024).toFixed(2)}</td>`;
+                harTableBody.appendChild(tr);
+            });
+        }
+
+        function identifyWebRTCEntriesByKeywords(entries) { /* ... same as before ... */ 
+            const webrtcKeywords = ['sdp', 'ice', 'candidate', 'offer', 'answer', 'turn', 'stun', 'webrtc', 'dtls', 'rtcp', 'rtp', 'trickle', 'transceiver'];
+            const relevantEntries = entries.filter(entry => {
+                const url = entry.request.url ? entry.request.url.toLowerCase() : '';
+                const reqBody = entry.request.postData && entry.request.postData.text ? entry.request.postData.text.toLowerCase() : '';
+                const resBody = entry.response.content && entry.response.content.text ? entry.response.content.text.toLowerCase() : '';
+                const mimeType = entry.response.content && entry.response.content.mimeType ? entry.response.content.mimeType.toLowerCase() : '';
+                return webrtcKeywords.some(keyword => url.includes(keyword) || reqBody.includes(keyword) || resBody.includes(keyword) || mimeType.includes(keyword)) || (entry.request.method === 'STUNBINDING'); 
+            });
+            webrtcEntriesDiv.innerHTML = '';
+            if (relevantEntries.length === 0) { webrtcEntriesDiv.innerHTML = '<p class="text-gray-500">No specific WebRTC related entries identified by common keywords.</p>'; return; }
+            const ul = document.createElement('ul');
+            ul.className = 'list-disc pl-5 space-y-1';
+            relevantEntries.forEach((entry) => {
+                const originalIndex = allEntries.indexOf(entry); 
+                const li = document.createElement('li'); li.className = 'text-sm';
+                const link = createEntryLink(entry, originalIndex);
+                li.appendChild(link); ul.appendChild(li);
+            });
+            webrtcEntriesDiv.appendChild(ul);
+        }
+        
+        function performWebRTCAnalysis(entries) { /* ... same as before ... */ 
+            webrtcAnalysisContentDiv.innerHTML = ''; 
+            let analysisHtml = '';
+            const diagnostics = { signaling: [], iceCandidates: [], stunTurnActivity: [], latencyIssues: [], potentialFirewallProxy: [] };
+            entries.forEach((entry, index) => {
+                const url = entry.request.url ? entry.request.url.toLowerCase() : '';
+                const reqBody = entry.request.postData && entry.request.postData.text ? entry.request.postData.text : '';
+                const resBody = entry.response.content && entry.response.content.text ? entry.response.content.text : '';
+                const mimeType = entry.response.content && entry.response.content.mimeType ? entry.response.content.mimeType.toLowerCase() : '';
+                const status = entry.response.status;
+                if (mimeType.includes('application/sdp') || (reqBody.includes('"type":"offer"') || reqBody.includes('"type":"answer"')) || (resBody.includes('"type":"offer"') || resBody.includes('"type":"answer"'))) {
+                    let message = `SDP ${reqBody.includes('offer') || resBody.includes('offer') ? 'Offer' : (reqBody.includes('answer') || resBody.includes('answer') ? 'Answer' : 'Message')} detected. Status: ${status}`;
+                    if (status >= 400 || status === 0) message += ` <span class="issue-critical">(Failed/Blocked)</span>`;
+                    diagnostics.signaling.push({ text: message, entry: entry, index: index });
+                }
+                if (url.includes('ice') || url.includes('candidate') || reqBody.toLowerCase().includes('candidate:') || reqBody.toLowerCase().includes('"candidate":') || resBody.toLowerCase().includes('candidate:') || resBody.toLowerCase().includes('"candidate":')) {
+                    let message = `ICE Candidate related message. Status: ${status}`;
+                    if (status >= 400 || status === 0) message += ` <span class="issue-critical">(Failed/Blocked)</span>`;
+                    diagnostics.iceCandidates.push({ text: message, entry: entry, index: index });
+                }
+                const isStunTurnUrl = url.includes('stun:') || url.includes('turn:') || url.includes('/turn?') || url.includes('turnserver');
+                if (isStunTurnUrl || entry.request.method === 'STUNBINDING') {
+                    let message = `STUN/TURN activity: ${entry.request.method} to ${url.substring(0,60)}... Status: ${status}`;
+                    if (status >= 400 || status === 0 || status === -1) {
+                        message += ` <span class="issue-critical">(Potential Connection Failure)</span>`;
+                        diagnostics.potentialFirewallProxy.push({ text: `Failed STUN/TURN request to ${url.substring(0,60)}... (Status: ${status})`, entry: entry, index: index, type: 'critical' });
+                    }
+                    diagnostics.stunTurnActivity.push({ text: message, entry: entry, index: index });
+                }
+                const isSignaling = mimeType.includes('application/sdp') || reqBody.includes('offer') || reqBody.includes('answer') || url.includes('signal');
+                if (isSignaling && entry.time > HIGH_LATENCY_THRESHOLD_MS) {
+                    diagnostics.latencyIssues.push({ text: `High latency (${entry.time.toFixed(2)}ms) for signaling message.`, entry: entry, index: index, type: 'warning' });
+                }
+                if (isStunTurnUrl && entry.time > HIGH_LATENCY_THRESHOLD_MS) {
+                     diagnostics.latencyIssues.push({ text: `High latency (${entry.time.toFixed(2)}ms) for STUN/TURN request.`, entry: entry, index: index, type: 'warning' });
+                }
+                if ((status >= 400 || status === 0 || status === -1) && (isSignaling || isStunTurnUrl || url.includes('webrtc'))) {
+                    if (status === 403 || status === 407) {
+                         diagnostics.potentialFirewallProxy.push({ text: `Request potentially blocked by Firewall/Proxy (Status: ${status}) to ${url.substring(0,60)}...`, entry: entry, index: index, type: 'critical' });
+                    }
+                }
+            });
+            analysisHtml += buildAnalysisListHtml("Signaling (SDP Offers/Answers)", diagnostics.signaling);
+            analysisHtml += buildAnalysisListHtml("ICE Candidate Exchange", diagnostics.iceCandidates);
+            analysisHtml += buildAnalysisListHtml("STUN/TURN Activity", diagnostics.stunTurnActivity);
+            analysisHtml += buildAnalysisListHtml("Potential Latency Issues", diagnostics.latencyIssues, true);
+            analysisHtml += buildAnalysisListHtml("Potential Firewall/Proxy Indicators", diagnostics.potentialFirewallProxy, true);
+            if (!analysisHtml.trim()) { analysisHtml = '<p class="text-gray-500">No specific WebRTC diagnostic patterns found.</p>'; }
+            webrtcAnalysisContentDiv.innerHTML = analysisHtml;
+        }
+
+        /**
+         * Performs detailed API call analysis and populates the dedicated section.
+         */
+        function performAPICallAnalysis(entries) {
+            apiAnalysisContentDiv.innerHTML = ''; // Clear previous analysis
+            let analysisHtml = '';
+
+            const apiDiagnostics = {
+                failedCalls: [],       // 4xx/5xx errors
+                slowCalls: [],         // High latency
+                payloadIssues: [],     // Missing request/response bodies
+                authIssues: []         // 401/403 errors, missing auth headers
+            };
+            
+            const apiPathKeywords = ['/api/', '/v1/', '/v2/', '/v3/', '/rest/', '/graphql'];
+            const commonAuthHeaders = ['authorization', 'x-api-key', 'apikey'];
+
+            entries.forEach((entry, index) => {
+                const url = entry.request.url ? entry.request.url.toLowerCase() : '';
+                const method = entry.request.method;
+                const status = entry.response.status;
+                const reqContentType = entry.request.headers.find(h => h.name.toLowerCase() === 'content-type')?.value?.toLowerCase() || '';
+                const resContentType = entry.response.content.mimeType ? entry.response.content.mimeType.toLowerCase() : '';
+                const reqBodySize = entry.request.bodySize;
+                const resBodySize = entry.response.bodySize;
+
+                // Heuristic to identify an API call
+                const isApiCall = apiPathKeywords.some(p => url.includes(p)) || 
+                                  reqContentType.includes('application/json') || 
+                                  resContentType.includes('application/json') ||
+                                  (entry._initiator && entry._initiator.type === 'xmlhttprequest') || // May not always be present/reliable
+                                  (entry._initiator && entry._initiator.type === 'fetch');
+
+
+                if (isApiCall) {
+                    // 1. Monitor API Calls & Check HTTP Status Codes (Failed Calls)
+                    if (status >= 400) {
+                        let message = `API call to ${url.substring(0,60)}... failed with Status: ${status}`;
+                        apiDiagnostics.failedCalls.push({ text: message, entry: entry, index: index, type: (status >=500 ? 'critical' : 'warning') });
+                    }
+
+                    // 2. Analyze Latency (Slow Calls)
+                    if (entry.time > API_HIGH_LATENCY_THRESHOLD_MS) {
+                        apiDiagnostics.slowCalls.push({ text: `Slow API call (${entry.time.toFixed(2)}ms) to ${url.substring(0,60)}...`, entry: entry, index: index, type: 'warning' });
+                    }
+
+                    // 3. Analyze Payloads
+                    if ((method === 'POST' || method === 'PUT') && reqBodySize <= 0 && !entry.request.postData?.text) {
+                         apiDiagnostics.payloadIssues.push({ text: `API call (${method}) to ${url.substring(0,60)}... has missing/empty request body.`, entry: entry, index: index, type: 'info' });
+                    }
+                    if (status >= 200 && status < 300 && resBodySize <= 0 && resContentType.includes('json') && !entry.response.content.text) { // Expecting JSON response but body is empty
+                         apiDiagnostics.payloadIssues.push({ text: `API call to ${url.substring(0,60)}... returned ${status} with potentially empty JSON response body.`, entry: entry, index: index, type: 'info' });
+                    }
+                    
+                    // 4. Detect Authentication Issues
+                    if (status === 401 || status === 403) {
+                        const authHeaderPresent = entry.request.headers.some(h => commonAuthHeaders.includes(h.name.toLowerCase()));
+                        let message = `Authentication error (Status: ${status}) for API call to ${url.substring(0,60)}...`;
+                        message += authHeaderPresent ? ' (Auth header was present)' : ' <span class="issue-warning">(Auth header potentially missing)</span>';
+                        apiDiagnostics.authIssues.push({ text: message, entry: entry, index: index, type: 'critical' });
+                    }
+                }
+            });
+
+            analysisHtml += buildAnalysisListHtml("Failed API Calls (4xx/5xx)", apiDiagnostics.failedCalls, true);
+            analysisHtml += buildAnalysisListHtml("Slow API Calls", apiDiagnostics.slowCalls, true);
+            analysisHtml += buildAnalysisListHtml("API Payload Observations", apiDiagnostics.payloadIssues, true);
+            analysisHtml += buildAnalysisListHtml("API Authentication Issues (401/403)", apiDiagnostics.authIssues, true);
+            
+            if (!analysisHtml.trim()) {
+                analysisHtml = '<p class="text-gray-500">No specific API call diagnostic patterns found based on current heuristics.</p>';
+            }
+            apiAnalysisContentDiv.innerHTML = analysisHtml;
+        }
+
+
+        function buildAnalysisListHtml(title, items, isIssueList = false) {
+            if (items.length === 0) {
+                return `<div><h3 class="text-md font-semibold text-gray-700 mt-2">${title}</h3><p class="text-sm text-gray-500 pl-2">None detected.</p></div>`;
+            }
+            let listHtml = `<div class="mt-2"><h3 class="text-md font-semibold text-gray-700">${title} (${items.length})</h3><ul class="list-disc pl-6 space-y-1 mt-1">`;
+            items.forEach(item => {
+                const link = createEntryLink(item.entry, item.index, item.text);
+                let itemClass = "text-sm";
+                if (isIssueList) { // Apply coloring based on type or keywords in text
+                    if (item.type === 'critical' || item.text.toLowerCase().includes('critical') || item.text.toLowerCase().includes('failed')) itemClass += " issue-critical";
+                    else if (item.type === 'warning' || item.text.toLowerCase().includes('warning') || item.text.toLowerCase().includes('slow') || item.text.toLowerCase().includes('missing')) itemClass += " issue-warning";
+                    else itemClass += " issue-info";
+                }
+                listHtml += `<li class="${itemClass}">${link.outerHTML}</li>`;
+            });
+            listHtml += '</ul></div>';
+            return listHtml;
+        }
+        
+        function createEntryLink(entry, originalIndex, customText = null) {
+            const link = document.createElement('a');
+            link.href = '#';
+            link.className = 'hover:underline';
+            if (customText) {
+                link.innerHTML = `${customText} (Entry #${originalIndex + 1})`; 
+            } else {
+                link.textContent = `${entry.request.method} - ${entry.request.url.substring(0,100)}... (Entry #${originalIndex + 1})`;
+            }
+            link.onclick = (e) => {
+                e.preventDefault();
+                displayEntryDetails(entry, originalIndex);
+                document.getElementById('entryDetails')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            };
+            return link;
+        }
+
+        function handleFilter() {
+            const filterText = filterInput.value.toLowerCase();
+            if (!allEntries) { displayHarEntries([]); return; }
+            const filteredEntries = allEntries.filter(entry => {
+                const url = entry.request.url ? entry.request.url.toLowerCase() : '';
+                const mimeType = entry.response.content && entry.response.content.mimeType ? entry.response.content.mimeType.toLowerCase() : '';
+                const postDataText = entry.request.postData && entry.request.postData.text ? entry.request.postData.text.toLowerCase() : '';
+                const responseContentText = entry.response.content && entry.response.content.text ? entry.response.content.text.toLowerCase() : '';
+                const statusText = String(entry.response.status); 
+                return url.includes(filterText) || mimeType.includes(filterText) || postDataText.includes(filterText) || responseContentText.includes(filterText) || statusText.includes(filterText);
+            });
+            displayHarEntries(filteredEntries);
+        }
+        
+        function displayEntryDetails(entry, entryIndex) {
+            entryDetailsDiv.classList.remove('hidden');
+            Object.assign(entryDetailsDiv.style, { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: '50', width: '90%', maxWidth: '800px' });
+            entryDetailsDiv.querySelector('h2').textContent = `Request Details (#${entryIndex + 1})`;
+            const tabs = entryDetailsDiv.querySelectorAll('.tab-button');
+            tabs.forEach(tab => {
+                tab.onclick = () => {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    renderTabContent(tab.dataset.tab, entry);
+                };
+            });
+            tabs.forEach(t => t.classList.remove('active'));
+            entryDetailsDiv.querySelector('.tab-button[data-tab="summary"]').classList.add('active');
+            renderTabContent('summary', entry); 
+        }
+
+        function renderTabContent(tabName, entry) { /* ... same as before, with minor safety checks ... */ 
+            detailsContent.innerHTML = ''; 
+            let content = '<div class="space-y-3">';
+            const resContent = entry.response.content || {}; // Ensure resContent is an object
+            const reqPostData = entry.request.postData || {}; // Ensure reqPostData is an object
+
+            switch (tabName) {
+                case 'summary':
+                    content += renderKvPair('URL', escapeHtml(entry.request.url), true);
+                    content += renderKvPair('Method', escapeHtml(entry.request.method));
+                    content += renderKvPair('Status', `${entry.response.status} ${escapeHtml(entry.response.statusText)}`);
+                    content += renderKvPair('MIME Type', escapeHtml(resContent.mimeType || 'N/A'));
+                    content += renderKvPair('Total Time', `${entry.time != null ? entry.time.toFixed(2) : 'N/A'} ms`);
+                    content += renderKvPair('Started', new Date(entry.startedDateTime).toLocaleString());
+                    if (entry.serverIPAddress) content += renderKvPair('Server IP', escapeHtml(entry.serverIPAddress));
+                    if (entry.connection) content += renderKvPair('Connection ID', escapeHtml(entry.connection));
+                    break;
+                case 'requestHeaders':
+                    content += renderHeadersTable(entry.request.headers);
+                    break;
+                case 'responseHeaders':
+                    content += renderHeadersTable(entry.response.headers);
+                    break;
+                case 'requestBody':
+                    if (reqPostData && (reqPostData.text || (reqPostData.params && reqPostData.params.length > 0))) {
+                        content += renderKvPair('MIME Type', escapeHtml(reqPostData.mimeType || 'N/A'));
+                        if (reqPostData.text) {
+                            content += renderKvPair('Content', `<pre class="whitespace-pre-wrap break-all bg-gray-50 p-2 rounded-md text-sm">${escapeHtml(tryFormatJson(reqPostData.text))}</pre>`, true);
+                        }
+                         if (reqPostData.params && reqPostData.params.length > 0) {
+                            content += '<h4 class="text-md font-semibold mt-3 mb-1">Params:</h4>';
+                            content += renderParamsTable(reqPostData.params);
+                        }
+                         if (!reqPostData.text && !(reqPostData.params && reqPostData.params.length > 0)) {
+                             content += '<p class="text-sm text-gray-500">Request body present but no text or params captured.</p>';
+                         }
+                    } else {
+                        content += '<p class="text-sm text-gray-500">No request body (POST data).</p>';
+                    }
+                    break;
+                case 'responseBody':
+                    content += renderKvPair('MIME Type', escapeHtml(resContent.mimeType || 'N/A'));
+                    content += renderKvPair('Size (bytes)', `${resContent.size != null ? resContent.size : 'N/A'}`); // Use resContent
+                    if (resContent.text) { // Use resContent
+                        let decodedText = resContent.text;
+                        if (resContent.encoding === 'base64') { // Use resContent
+                            try { decodedText = atob(resContent.text); } 
+                            catch (e) { decodedText = "[Error decoding Base64 content]"; }
+                        }
+                        content += renderKvPair('Content', `<pre class="whitespace-pre-wrap break-all bg-gray-50 p-2 rounded-md text-sm">${escapeHtml(tryFormatJson(decodedText))}</pre>`, true);
+                    } else if (resContent.size > 0 && !resContent.text) { // Use resContent
+                        content += '<p class="text-sm text-gray-500">Response body has content but it is not text (e.g., binary) or not captured.</p>';
+                    } else {
+                        content += '<p class="text-sm text-gray-500">No text content in response body.</p>';
+                    }
+                    break;
+                case 'timings':
+                    content += renderTimings(entry.timings);
+                    break;
+            }
+            content += '</div>';
+            detailsContent.innerHTML = content;
+        }
+        
+        function renderKvPair(key, value, isFullWidthValue = false) { /* ... same as before ... */ 
+            const valueClass = isFullWidthValue ? 'col-span-2 md:col-span-3' : 'md:col-span-2';
+            const displayValue = (typeof value === 'number' || typeof value === 'boolean') ? value.toString() : (value || 'N/A');
+            return `<div class="grid grid-cols-1 md:grid-cols-3 gap-1 py-1 border-b border-gray-100"><dt class="text-sm font-medium text-gray-600">${escapeHtml(key)}:</dt><dd class="text-sm text-gray-800 ${valueClass} break-words">${displayValue}</dd></div>`;
+        }
+        function renderHeadersTable(headers) { /* ... same as before ... */ 
+            if (!headers || headers.length === 0) return '<p class="text-sm text-gray-500">No headers.</p>';
+            let table = '<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-3 py-1.5 text-left font-medium text-gray-600">Name</th><th class="px-3 py-1.5 text-left font-medium text-gray-600">Value</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+            headers.forEach(h => { table += `<tr><td class="px-3 py-1.5 whitespace-nowrap font-medium text-gray-700 break-all">${escapeHtml(h.name)}</td><td class="px-3 py-1.5 text-gray-700 break-all">${escapeHtml(h.value)}</td></tr>`; });
+            return table + '</tbody></table></div>';
+        }
+        function renderParamsTable(params) { /* ... same as before ... */ 
+            if (!params || params.length === 0) return '<p class="text-sm text-gray-500">No parameters.</p>';
+            let table = '<div class="overflow-x-auto"><table class="min-w-full text-sm divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-3 py-1.5 text-left font-medium text-gray-600">Name</th><th class="px-3 py-1.5 text-left font-medium text-gray-600">Value</th><th class="px-3 py-1.5 text-left font-medium text-gray-600">File Name</th><th class="px-3 py-1.5 text-left font-medium text-gray-600">Content Type</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+            params.forEach(p => { table += `<tr><td class="px-3 py-1.5 whitespace-nowrap font-medium text-gray-700 break-all">${escapeHtml(p.name)}</td><td class="px-3 py-1.5 text-gray-700 break-all">${escapeHtml(p.value || '')}</td><td class="px-3 py-1.5 text-gray-700 break-all">${escapeHtml(p.fileName || 'N/A')}</td><td class="px-3 py-1.5 text-gray-700 break-all">${escapeHtml(p.contentType || 'N/A')}</td></tr>`; });
+            return table + '</tbody></table></div>';
+        }
+        function renderTimings(timings) { /* ... same as before ... */ 
+            let content = '<h4 class="text-md font-semibold mb-2">Request Timings (ms):</h4>';
+            if (!timings || Object.keys(timings).length === 0) return content + '<p class="text-sm text-gray-500">No detailed timing information.</p>';
+            const order = ['blocked', 'dns', 'connect', 'ssl', 'send', 'wait', 'receive'];
+            let found = false;
+            order.forEach(key => {
+                if (timings[key] !== undefined && timings[key] >= 0) { 
+                    content += renderKvPair(key.charAt(0).toUpperCase() + key.slice(1), timings[key].toFixed(2));
+                    found = true;
+                }
+            });
+            if (!found) content += '<p class="text-sm text-gray-500">No applicable timing values found.</p>';
+            return content;
+        }
+        function tryFormatJson(text) { /* ... same as before ... */ 
+            try { if (typeof text === 'object') return JSON.stringify(text, null, 2); const parsed = JSON.parse(text); return JSON.stringify(parsed, null, 2); } catch (e) { return text; }
+        }
+        function escapeHtml(unsafe) { /* ... same as before ... */ 
+            if (typeof unsafe !== 'string') { if (unsafe === null || unsafe === undefined) return ''; return String(unsafe); }
+            return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
